@@ -1,2 +1,2 @@
-TOKEN = '5380528358:AAFGqwedvJo4_wf411gzX_MaQdVisCmH5ws'
+TOKEN = 'YOUR_TOKEN'
 DB_FILENAME = 'form.db'
