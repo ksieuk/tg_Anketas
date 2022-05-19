@@ -1,20 +1,26 @@
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.dispatcher.filters import Text
 from aiogram.dispatcher.filters.state import State, StatesGroup
+from aiogram.dispatcher.filters import BoundFilter
 from aiogram.dispatcher import FSMContext
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 import aiogram.utils.markdown as md
 from aiogram.types import ParseMode
 
+from pydrive.auth import GoogleAuth
+from pydrive.drive import GoogleDrive
+
 import prettytable as pt
 import sqlite3
 from datetime import datetime
+
 
 from config import *
 
 storage = MemoryStorage()
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot, storage=storage)
+admins_ids = [OWNER_MEMBER_ID]
 
 
 class Form(StatesGroup):
@@ -32,9 +38,57 @@ class Form(StatesGroup):
     additional_information = State()
 
 
+class MyFilter(BoundFilter):
+    key = 'is_admin'
+
+    def __init__(self, is_admin):
+        self.is_admin = is_admin
+
+    async def check(self, message: types.Message):
+        return message.chat.id in admins_ids
+
+
+dp.filters_factory.bind(MyFilter)
+
+
 @dp.message_handler(commands='help')
 async def process_help_command(message: types.Message):
     await message.reply("Бот для записи анкет")
+
+
+@dp.message_handler(is_admin=True, commands='upload')
+async def google_drive_upload_file(message: types.Message = None, filepath=DB_FILENAME, google_dir=GOOGLE_DRIVE_DIR_ID):
+    file_list = google_drive.ListFile({'q': f"'{google_dir}' in parents and trashed=false"}).GetList()
+    for file in file_list:
+        file.Delete()
+    gfile = google_drive.CreateFile({'parents': [{'id': google_dir}]})
+    gfile.SetContentFile(filepath)
+    gfile.Upload()
+    await message.reply('База данных успешно загружена')
+
+
+@dp.message_handler(is_admin=True, commands='admin_add')
+async def admin_add(message: types.Message):
+    user_id = message.text[11:]
+    global admins_ids
+    if not (user_id and user_id.isdigit()):
+        return await message.reply("ID должен состоять только из цифр")
+    if user_id in admins_ids:
+        return await message.reply("ID уже записан в список админов")
+    admins_ids.append(user_id)
+    await message.reply(f"{user_id} добавлен в список админов")
+
+
+@dp.message_handler(is_admin=True, commands='admin_remove')
+async def admin_remove(message: types.Message):
+    user_id = message.text[14:]
+    global admins_ids
+    if not (user_id and user_id.isdigit()):
+        return await message.reply("ID должен состоять только из цифр")
+    if user_id not in admins_ids:
+        return await message.reply("ID не записан в список админов")
+    admins_ids.remove(user_id)
+    await message.reply(f"{user_id} удален из списка админов")
 
 
 @dp.message_handler(state='*', commands='cancel')
@@ -320,6 +374,18 @@ async def db_add_questionnaire_questionnaire(data):
     db.close()
 
 
+def google_authorization():
+    gauth_ = GoogleAuth()
+    auth_url = gauth_.GetAuthUrl()
+    print(auth_url)
+    code = input()
+    if r'%2F' in code:
+        code = code.replace(r"%2F", r'/')
+    gauth_.Auth(code)
+    drive_ = GoogleDrive(gauth_)
+    return drive_
+
+
 async def db_create_table(filename):
     """Создание таблицы в бд"""
     db = sqlite3.connect(filename)
@@ -351,6 +417,8 @@ async def db_create_table(filename):
 
 
 def main():
+    global google_drive
+    google_drive = google_authorization()
     executor.start_polling(dp)
 
 
