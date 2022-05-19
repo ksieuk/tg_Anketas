@@ -12,7 +12,7 @@ from pydrive.drive import GoogleDrive
 
 import prettytable as pt
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 
 from config import *
@@ -64,7 +64,7 @@ async def google_drive_upload_file(message: types.Message = None, filepath=DB_FI
     gfile = google_drive.CreateFile({'parents': [{'id': google_dir}]})
     gfile.SetContentFile(filepath)
     gfile.Upload()
-    await message.reply('База данных успешно загружена')
+    await message.reply(f'[База данных]({GOOGLE_DRIVE_TEAM_DIR_URL}) успешно загружена', parse_mode='MarkdownV2')
 
 
 @dp.message_handler(is_admin=True, commands='admin_add')
@@ -340,12 +340,13 @@ async def process_additional_information(message: types.Message, state: FSMConte
         parse_mode=ParseMode.MARKDOWN_V2
     )
 
-    application_time = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+    offset = timezone(timedelta(hours=3))
+    application_time = datetime.now(offset).strftime("%d.%m.%Y %H:%M:%S")
     async with state.proxy() as data:
         data['date'] = application_time
         data['user_id'] = message.from_user.id
 
-    await db_add_questionnaire_questionnaire(data)
+    await db_add_questionnaire(data)
 
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
     keyboard.add('Начать заполнение анкеты')
@@ -355,7 +356,7 @@ async def process_additional_information(message: types.Message, state: FSMConte
     await message.answer("Удачи!", reply_markup=keyboard)
 
 
-async def db_add_questionnaire_questionnaire(data):
+async def db_add_questionnaire(data):
     """Запись в базу данных"""
     await db_create_table(DB_FILENAME)
 
